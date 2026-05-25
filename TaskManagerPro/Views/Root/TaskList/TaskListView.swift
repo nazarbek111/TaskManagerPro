@@ -26,6 +26,7 @@ struct TaskListView: View {
                         VStack(spacing: 16) {
                             SearchBarView(text: $viewModel.searchText)
                                 .padding(.top, 12)
+                            QuoteCardView()
 
                             SortMenuView(selectedSortOption: $viewModel.selectedSortOption)
 
