@@ -23,13 +23,20 @@ final class QuoteViewModel: ObservableObject {
     func loadQuote() async {
         isLoading = true
         errorMessage = nil
+        defer { isLoading = false }
 
         do {
-            quote = try await quoteService.fetchQuote()
+            let fetched = try await quoteService.fetchQuote()
+            self.quote = fetched
+        } catch let urlError as URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .timedOut, .cannotFindHost, .cannotConnectToHost:
+                self.errorMessage = "No internet connection. Please check your network."
+            default:
+                self.errorMessage = "Could not load quote. Please try again."
+            }
         } catch {
-            errorMessage = "Could not load quote. Please try again."
+            self.errorMessage = "Could not load quote. Please try again."
         }
-
-        isLoading = false
     }
 }
