@@ -180,6 +180,33 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.plain)
 
+                        // ── UIKit Collection Demo ───────────────────────────
+                        NavigationLink {
+                            TaskCategoryCollectionScreen()
+                                .ignoresSafeArea()
+                        } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "square.grid.2x2")
+                                    .font(.title2)
+                                    .foregroundStyle(Color.accentColor)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Category Collection Demo")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                    Text("UICollectionView grid with sound button")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(18)
+                            .glassCardStyle()
+                        }
+                        .buttonStyle(.plain)
+
                         // ── ВЫХОД ──────────────────────────────────────────
                         Button { showLogoutAlert = true } label: {
                             HStack {
