@@ -1,310 +1,254 @@
-// MARK: - AuthView.swift
-// Экран входа и регистрации
-
 import SwiftUI
+import UIKit
 
 struct AuthView: View {
     @EnvironmentObject private var auth: AuthService
-    @State private var mode: AuthMode = .login
-    @State private var email = ""
-    @State private var password = ""
-    @State private var name = ""
-    @State private var confirmPassword = ""
-    @State private var showPassword = false
-    @State private var showConfirmPassword = false
-    @State private var errorMessage = ""
-    @State private var isLoading = false
-    @FocusState private var focused: Field?
 
-    enum AuthMode { case login, register }
-    enum Field { case name, email, password, confirmPassword }
+    @State private var isLoginMode: Bool = true
+    @State private var email: String = ""
+    @State private var password: String = ""
+    @State private var confirmPassword: String = ""
+    @State private var localError: String = ""
+
+    @FocusState private var focusedField: Field?
+
+    private enum Field {
+        case email
+        case password
+        case confirm
+    }
 
     var body: some View {
-        ZStack {
-            // Фон
-            LinearGradient(
-                colors: [Color.accentColor.opacity(0.18), Color(.systemBackground), Color(.systemBackground)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-
-            ScrollView {
-                VStack(spacing: 0) {
-                    // Лого
-                    VStack(spacing: 12) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 64))
-                            .foregroundStyle(Color.accentColor)
-                            .padding(24)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .shadow(color: .accentColor.opacity(0.3), radius: 16, y: 8)
-
-                        Text("TaskManager Pro")
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
-
-                        Text(mode == .login ? "Войдите в свой аккаунт" : "Создайте новый аккаунт")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.top, 60)
-                    .padding(.bottom, 40)
-
-                    // Переключатель режима
-                    modeSwitcher
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 28)
-
-                    // Поля
-                    VStack(spacing: 16) {
-                        if mode == .register {
-                            inputField(
-                                label: "ИМЯ",
-                                placeholder: "Например: Назарбек",
-                                text: $name,
-                                field: .name,
-                                icon: "person.fill"
-                            )
-                        }
-
-                        inputField(
-                            label: "EMAIL",
-                            placeholder: "example@mail.com",
-                            text: $email,
-                            field: .email,
-                            icon: "envelope.fill",
-                            keyboard: .emailAddress
-                        )
-
-                        passwordField(
-                            label: "ПАРОЛЬ",
-                            placeholder: mode == .login ? "Ваш пароль" : "Придумайте пароль",
-                            text: $password,
-                            show: $showPassword,
-                            field: .password
-                        )
-
-                        // Критерии пароля при регистрации
-                        if mode == .register && !password.isEmpty {
-                            passwordCriteriaView
-                        }
-
-                        if mode == .register {
-                            passwordField(
-                                label: "ПОДТВЕРЖДЕНИЕ ПАРОЛЯ",
-                                placeholder: "Повторите пароль",
-                                text: $confirmPassword,
-                                show: $showConfirmPassword,
-                                field: .confirmPassword
-                            )
-                        }
-                    }
-                    .padding(.horizontal, 24)
-
-                    // Ошибка
-                    if !errorMessage.isEmpty {
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                            Text(errorMessage)
-                                .font(.subheadline.weight(.medium))
-                        }
-                        .foregroundStyle(.red)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 16)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-
-                    // Кнопка действия
-                    Button(action: performAction) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .fill(Color.accentColor)
-
-                            if isLoading {
-                                ProgressView()
-                                    .tint(.white)
-                            } else {
-                                Text(mode == .login ? "Войти" : "Зарегистрироваться")
-                                    .font(.headline.weight(.bold))
-                                    .foregroundStyle(.white)
-                            }
-                        }
-                        .frame(height: 56)
-                    }
-                    .disabled(isLoading)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 28)
-
-                    Spacer(minLength: 40)
-                }
+        VStack(spacing: 24) {
+            Picker("", selection: $isLoginMode) {
+                Text("Login").tag(true)
+                Text("Register").tag(false)
             }
-        }
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: mode)
-        .animation(.spring(response: 0.3), value: errorMessage)
-    }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 24)
+            .onChange(of: isLoginMode) { _, _ in
+                resetErrors()
+            }
 
-    // MARK: - Переключатель Login / Register
-    private var modeSwitcher: some View {
-        HStack(spacing: 0) {
-            ForEach([AuthMode.login, .register], id: \.self) { m in
-                Button {
-                    withAnimation {
-                        mode = m
-                        errorMessage = ""
-                        password = ""
-                        confirmPassword = ""
+            Group {
+                TextField("Email", text: $email)
+                    .keyboardType(.emailAddress)
+                    .textContentType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.secondary.opacity(0.1))
+                    )
+                    .focused($focusedField, equals: .email)
+                    .submitLabel(.next)
+                    .onSubmit {
+                        focusedField = .password
                     }
-                } label: {
-                    Text(m == .login ? "Вход" : "Регистрация")
-                        .font(.subheadline.weight(mode == m ? .bold : .regular))
-                        .foregroundStyle(mode == m ? Color.accentColor : .secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+
+                SecureField("Password", text: $password)
+                    .textContentType(isLoginMode ? .password : .newPassword)
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.secondary.opacity(0.1))
+                    )
+                    .focused($focusedField, equals: .password)
+                    .submitLabel(isLoginMode ? .go : .next)
+                    .onSubmit {
+                        if isLoginMode {
+                            performLogin()
+                        } else {
+                            focusedField = .confirm
+                        }
+                    }
+
+                if !isLoginMode {
+                    SecureField("Confirm Password", text: $confirmPassword)
+                        .textContentType(.newPassword)
+                        .padding(16)
                         .background(
-                            mode == m
-                            ? Color.accentColor.opacity(0.12)
-                            : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 14)
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color.secondary.opacity(0.1))
                         )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(4)
-        .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 18))
-    }
-
-    // MARK: - Поле ввода
-    private func inputField(
-        label: String,
-        placeholder: String,
-        text: Binding<String>,
-        field: Field,
-        icon: String,
-        keyboard: UIKeyboardType = .default
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20)
-
-                TextField(placeholder, text: text)
-                    .font(.system(size: 16, weight: .medium))
-                    .keyboardType(keyboard)
-                    .autocapitalization(keyboard == .emailAddress ? .none : .words)
-                    .autocorrectionDisabled()
-                    .focused($focused, equals: field)
-            }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.secondary.opacity(0.1))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .strokeBorder(focused == field ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 1.5)
-                    )
-            )
-        }
-    }
-
-    // MARK: - Поле пароля
-    private func passwordField(
-        label: String,
-        placeholder: String,
-        text: Binding<String>,
-        show: Binding<Bool>,
-        field: Field
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 12) {
-                Image(systemName: "lock.fill")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20)
-
-                Group {
-                    if show.wrappedValue {
-                        TextField(placeholder, text: text)
-                    } else {
-                        SecureField(placeholder, text: text)
-                    }
-                }
-                .font(.system(size: 16, weight: .medium))
-                .autocapitalization(.none)
-                .autocorrectionDisabled()
-                .focused($focused, equals: field)
-
-                Button {
-                    show.wrappedValue.toggle()
-                } label: {
-                    Image(systemName: show.wrappedValue ? "eye.slash.fill" : "eye.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.secondary.opacity(0.1))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .strokeBorder(focused == field ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 1.5)
-                    )
-            )
-        }
-    }
-
-    // MARK: - Критерии пароля
-    private var passwordCriteriaView: some View {
-        let criteria = auth.passwordCriteria(for: password)
-        return VStack(alignment: .leading, spacing: 6) {
-            ForEach(criteria, id: \.text) { c in
-                HStack(spacing: 8) {
-                    Image(systemName: c.isMet ? "checkmark.circle.fill" : "circle")
-                        .font(.caption)
-                        .foregroundStyle(c.isMet ? .green : .secondary)
-                    Text(c.text)
-                        .font(.caption)
-                        .foregroundStyle(c.isMet ? .primary : .secondary)
+                        .focused($focusedField, equals: .confirm)
+                        .submitLabel(.go)
+                        .onSubmit {
+                            performRegister()
+                        }
                 }
             }
-        }
-        .padding(.horizontal, 4)
-        .animation(.easeInOut(duration: 0.2), value: password)
-    }
+            .padding(.horizontal, 24)
 
-    // MARK: - Действие
-    private func performAction() {
-        focused = nil
-        errorMessage = ""
-        isLoading = true
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            do {
-                if mode == .login {
-                    try auth.signIn(email: email, password: password)
+            Button {
+                if isLoginMode {
+                    performLogin()
                 } else {
-                    guard password == confirmPassword else {
-                        errorMessage = "Пароли не совпадают"
-                        isLoading = false
-                        return
-                    }
-                    try auth.register(name: name, email: email, password: password)
+                    performRegister()
                 }
-                // Устанавливаем онбординг как пройденный
-                UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
-            } catch {
-                errorMessage = error.localizedDescription
+            } label: {
+                HStack {
+                    if auth.isLoading {
+                        ProgressView()
+                            .tint(.white)
+                    }
+
+                    Text(isLoginMode ? "Login" : "Create Account")
+                        .font(.headline.weight(.bold))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 56)
+                .background(
+                    RoundedRectangle(cornerRadius: 22)
+                        .fill(isPrimaryButtonDisabled ? Color.gray : Color.accentColor)
+                )
+                .padding(.horizontal, 24)
             }
-            isLoading = false
+            .disabled(isPrimaryButtonDisabled)
+
+            HStack {
+                line
+
+                Text("or")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                line
+            }
+            .padding(.horizontal, 24)
+
+            Button {
+                performGoogleSignIn()
+            } label: {
+                Text("Continue with Google")
+                    .font(.headline)
+                    .foregroundColor(Color.accentColor)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(
+                        RoundedRectangle(cornerRadius: 22)
+                            .stroke(Color.accentColor, lineWidth: 2)
+                    )
+                    .padding(.horizontal, 24)
+            }
+            .disabled(auth.isLoading)
+
+            if !currentMessage.isEmpty {
+                Text(currentMessage)
+                    .foregroundColor(.red)
+                    .font(.subheadline.weight(.medium))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
+            }
+
+            Spacer()
         }
+        .padding(.top, 40)
+    }
+
+    private var line: some View {
+        Rectangle()
+            .fill(Color.secondary.opacity(0.3))
+            .frame(height: 1)
+    }
+
+    private var currentMessage: String {
+        if let serviceMessage = auth.errorMessage, !serviceMessage.isEmpty {
+            return serviceMessage
+        }
+
+        return localError
+    }
+
+    private var isPrimaryButtonDisabled: Bool {
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if auth.isLoading {
+            return true
+        }
+
+        if trimmedEmail.isEmpty || password.isEmpty {
+            return true
+        }
+
+        if !isLoginMode && confirmPassword.isEmpty {
+            return true
+        }
+
+        return false
+    }
+
+    private func performLogin() {
+        focusedField = nil
+        resetErrors()
+
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPassword = password.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedEmail.isEmpty else {
+            localError = "Email is required."
+            return
+        }
+
+        guard !trimmedPassword.isEmpty else {
+            localError = "Password is required."
+            return
+        }
+
+        auth.login(email: trimmedEmail, password: trimmedPassword) { _ in }
+    }
+
+    private func performRegister() {
+        focusedField = nil
+        resetErrors()
+
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPassword = password.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedConfirm = confirmPassword.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedEmail.isEmpty else {
+            localError = "Email is required."
+            return
+        }
+
+        guard !trimmedPassword.isEmpty else {
+            localError = "Password is required."
+            return
+        }
+
+        guard trimmedPassword == trimmedConfirm else {
+            localError = "Passwords do not match."
+            return
+        }
+
+        auth.register(email: trimmedEmail, password: trimmedPassword) { _ in }
+    }
+
+    private func performGoogleSignIn() {
+        focusedField = nil
+        resetErrors()
+
+        guard let rootViewController = currentRootViewController() else {
+            localError = "Cannot find root view controller."
+            return
+        }
+
+        auth.signInWithGoogle(presentingViewController: rootViewController) { _ in }
+    }
+
+    private func resetErrors() {
+        localError = ""
+        auth.clearError()
+    }
+
+    private func currentRootViewController() -> UIViewController? {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+            return nil
+        }
+
+        return scene.windows.first(where: { $0.isKeyWindow })?.rootViewController
     }
 }

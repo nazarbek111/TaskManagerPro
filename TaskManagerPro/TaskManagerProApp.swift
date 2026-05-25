@@ -5,9 +5,15 @@
 
 import SwiftUI
 import SwiftData
+import FirebaseCore
 
 @main
 struct TaskManagerProApp: App {
+    init() {
+        // Configure Firebase on app launch. Requires GoogleService-Info.plist in the target.
+        FirebaseApp.configure()
+    }
+
     @AppStorage("appAppearance") private var appAppearanceRawValue = AppAppearance.system.rawValue
     @StateObject private var auth = AuthService.shared
 

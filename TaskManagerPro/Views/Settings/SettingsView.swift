@@ -268,7 +268,7 @@ struct SettingsView: View {
         userName = ""
         userRole = ""
         hasSeenOnboarding = false
-        auth.signOut()
+        auth.signOut { _ in }
     }
 
     private func demoUIKitTasks() -> [UIKitTaskRow] {
@@ -353,3 +353,4 @@ struct ProfileEditSheet: View {
         }
     }
 }
+

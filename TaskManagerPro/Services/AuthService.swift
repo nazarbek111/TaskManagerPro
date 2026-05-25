@@ -1,185 +1,225 @@
-// MARK: - AuthService.swift
-// Локальная аутентификация через email + пароль (хранится в Keychain через UserDefaults для простоты)
-// Для production — замените на Keychain или Firebase Auth
-
 import Foundation
-import SwiftUI
 import Combine
-import CryptoKit
-import SwiftUI
-import CryptoKit
+import UIKit
 
-// MARK: - Модель пользователя
-struct AppUser: Codable {
-    let id: String          // UUID строкой
-    let email: String
-    var name: String
-    var passwordHash: String
-}
+#if canImport(FirebaseAuth)
+import FirebaseAuth
+#endif
 
-// MARK: - Ошибки аутентификации
-enum AuthError: LocalizedError {
-    case emailAlreadyInUse
-    case userNotFound
-    case wrongPassword
-    case weakPassword(String)
-    case invalidEmail
-    case emptyFields
+#if canImport(FirebaseCore)
+import FirebaseCore
+#endif
 
-    var errorDescription: String? {
-        switch self {
-        case .emailAlreadyInUse:   return "Этот email уже используется"
-        case .userNotFound:        return "Пользователь не найден"
-        case .wrongPassword:       return "Неверный пароль"
-        case .weakPassword(let r): return r
-        case .invalidEmail:        return "Введите корректный email"
-        case .emptyFields:         return "Заполните все поля"
-        }
-    }
-}
+#if canImport(GoogleSignIn)
+import GoogleSignIn
+#endif
 
-// MARK: - Критерии пароля
-struct PasswordCriteria {
-    let text: String
-    let isMet: Bool
-}
-
-// MARK: - AuthService
 final class AuthService: ObservableObject {
-
     static let shared = AuthService()
 
-    @Published var currentUser: AppUser?
-    @Published var isLoggedIn: Bool = false
+    @Published private(set) var isLoggedIn: Bool = false
+    @Published private(set) var errorMessage: String? = nil
+    @Published private(set) var isLoading: Bool = false
 
-    private let usersKey = "registeredUsers"
-    private let currentUserIDKey = "currentUserID"
+    private let userDefaultsUserIDKey = "currentUserID"
 
-    init() {
-        // Восстанавливаем сессию
-        let savedID = UserDefaults.standard.string(forKey: currentUserIDKey) ?? ""
-        if !savedID.isEmpty, let user = findUser(byID: savedID) {
-            self.currentUser = user
-            self.isLoggedIn = true
+    private init() {
+        #if canImport(FirebaseAuth)
+        setupAuthStateListener()
+        #else
+        self.isLoggedIn = false
+        #endif
+    }
+
+    // MARK: - Register with Email/Password
+
+    func register(email: String, password: String, completion: @escaping (Bool) -> Void) {
+        #if canImport(FirebaseAuth)
+        isLoading = true
+        errorMessage = nil
+
+        Auth.auth().createUser(withEmail: email, password: password) { [weak self] authResult, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+
+                self.isLoading = false
+
+                if let error {
+                    self.errorMessage = error.localizedDescription
+                    completion(false)
+                    return
+                }
+
+                guard let user = authResult?.user else {
+                    self.errorMessage = "Unexpected error: No user found after registration."
+                    completion(false)
+                    return
+                }
+
+                UserDefaults.standard.set(user.uid, forKey: self.userDefaultsUserIDKey)
+                self.isLoggedIn = true
+                completion(true)
+            }
+        }
+        #else
+        errorMessage = "Registration is unavailable because FirebaseAuth is not imported."
+        completion(false)
+        #endif
+    }
+
+    // MARK: - Login with Email/Password
+
+    func login(email: String, password: String, completion: @escaping (Bool) -> Void) {
+        #if canImport(FirebaseAuth)
+        isLoading = true
+        errorMessage = nil
+
+        Auth.auth().signIn(withEmail: email, password: password) { [weak self] authResult, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+
+                self.isLoading = false
+
+                if let error {
+                    self.errorMessage = error.localizedDescription
+                    completion(false)
+                    return
+                }
+
+                guard let user = authResult?.user else {
+                    self.errorMessage = "Unexpected error: No user found after login."
+                    completion(false)
+                    return
+                }
+
+                UserDefaults.standard.set(user.uid, forKey: self.userDefaultsUserIDKey)
+                self.isLoggedIn = true
+                completion(true)
+            }
+        }
+        #else
+        errorMessage = "Login is unavailable because FirebaseAuth is not imported."
+        completion(false)
+        #endif
+    }
+
+    // MARK: - Google Sign-In
+
+    func signInWithGoogle(presentingViewController: UIViewController, completion: @escaping (Bool) -> Void) {
+        #if canImport(FirebaseAuth) && canImport(FirebaseCore) && canImport(GoogleSignIn)
+        guard let clientID = FirebaseApp.app()?.options.clientID else {
+            errorMessage = "Missing Google client ID."
+            completion(false)
+            return
+        }
+
+        isLoading = true
+        errorMessage = nil
+
+        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+
+        GIDSignIn.sharedInstance.signIn(withPresenting: presentingViewController) { [weak self] result, error in
+            if let error {
+                DispatchQueue.main.async {
+                    self?.isLoading = false
+                    self?.errorMessage = error.localizedDescription
+                    completion(false)
+                }
+                return
+            }
+
+            guard let user = result?.user,
+                  let idToken = user.idToken?.tokenString else {
+                DispatchQueue.main.async {
+                    self?.isLoading = false
+                    self?.errorMessage = "Failed to retrieve Google authentication tokens."
+                    completion(false)
+                }
+                return
+            }
+
+            let credential = GoogleAuthProvider.credential(
+                withIDToken: idToken,
+                accessToken: user.accessToken.tokenString
+            )
+
+            Auth.auth().signIn(with: credential) { [weak self] authResult, error in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+
+                    self.isLoading = false
+
+                    if let error {
+                        self.errorMessage = error.localizedDescription
+                        completion(false)
+                        return
+                    }
+
+                    guard let firebaseUser = authResult?.user else {
+                        self.errorMessage = "Unexpected error: No user after Google sign-in."
+                        completion(false)
+                        return
+                    }
+
+                    UserDefaults.standard.set(firebaseUser.uid, forKey: self.userDefaultsUserIDKey)
+                    self.isLoggedIn = true
+                    completion(true)
+                }
+            }
+        }
+        #else
+        errorMessage = "Google Sign-In is unavailable because FirebaseAuth, FirebaseCore, or GoogleSignIn is not imported."
+        completion(false)
+        #endif
+    }
+
+    // MARK: - Sign Out
+
+    func signOut(completion: @escaping (Bool) -> Void) {
+        #if canImport(FirebaseAuth)
+        do {
+            try Auth.auth().signOut()
+
+            #if canImport(GoogleSignIn)
+            GIDSignIn.sharedInstance.signOut()
+            #endif
+
+            UserDefaults.standard.removeObject(forKey: userDefaultsUserIDKey)
+            isLoggedIn = false
+            completion(true)
+        } catch {
+            errorMessage = error.localizedDescription
+            completion(false)
+        }
+        #else
+        errorMessage = "Sign out is unavailable because FirebaseAuth is not imported."
+        completion(false)
+        #endif
+    }
+
+    // MARK: - Helpers for SwiftUI
+
+    func clearError() {
+        errorMessage = nil
+    }
+
+    // MARK: - Private Methods
+
+    #if canImport(FirebaseAuth)
+    private func setupAuthStateListener() {
+        Auth.auth().addStateDidChangeListener { [weak self] _, user in
+            DispatchQueue.main.async {
+                guard let self else { return }
+
+                if let user {
+                    self.isLoggedIn = true
+                    UserDefaults.standard.set(user.uid, forKey: self.userDefaultsUserIDKey)
+                } else {
+                    self.isLoggedIn = false
+                    UserDefaults.standard.removeObject(forKey: self.userDefaultsUserIDKey)
+                }
+            }
         }
     }
-
-    // MARK: - Регистрация
-    func register(name: String, email: String, password: String) throws {
-        let trimName = name.trimmingCharacters(in: .whitespaces)
-        let trimEmail = email.trimmingCharacters(in: .whitespaces).lowercased()
-        let trimPass = password.trimmingCharacters(in: .whitespaces)
-
-        guard !trimName.isEmpty && !trimEmail.isEmpty && !trimPass.isEmpty else {
-            throw AuthError.emptyFields
-        }
-        guard isValidEmail(trimEmail) else {
-            throw AuthError.invalidEmail
-        }
-        if let error = passwordStrengthError(trimPass) {
-            throw AuthError.weakPassword(error)
-        }
-
-        var users = loadUsers()
-        guard !users.contains(where: { $0.email == trimEmail }) else {
-            throw AuthError.emailAlreadyInUse
-        }
-
-        let newUser = AppUser(
-            id: UUID().uuidString,
-            email: trimEmail,
-            name: trimName,
-            passwordHash: hash(trimPass)
-        )
-        users.append(newUser)
-        saveUsers(users)
-        login(user: newUser)
-    }
-
-    // MARK: - Вход
-    func signIn(email: String, password: String) throws {
-        let trimEmail = email.trimmingCharacters(in: .whitespaces).lowercased()
-        let trimPass = password.trimmingCharacters(in: .whitespaces)
-
-        guard !trimEmail.isEmpty && !trimPass.isEmpty else {
-            throw AuthError.emptyFields
-        }
-        guard isValidEmail(trimEmail) else {
-            throw AuthError.invalidEmail
-        }
-
-        let users = loadUsers()
-        guard let user = users.first(where: { $0.email == trimEmail }) else {
-            throw AuthError.userNotFound
-        }
-        guard user.passwordHash == hash(trimPass) else {
-            throw AuthError.wrongPassword
-        }
-
-        login(user: user)
-    }
-
-    // MARK: - Выход
-    func signOut() {
-        currentUser = nil
-        isLoggedIn = false
-        UserDefaults.standard.removeObject(forKey: currentUserIDKey)
-        // Сбрасываем онбординг тоже
-        UserDefaults.standard.set(false, forKey: "hasSeenOnboarding")
-    }
-
-    // MARK: - Критерии пароля (для UI)
-    func passwordCriteria(for password: String) -> [PasswordCriteria] {
-        [
-            PasswordCriteria(text: "Минимум 8 символов",          isMet: password.count >= 8),
-            PasswordCriteria(text: "Хотя бы одна заглавная буква", isMet: password.contains(where: { $0.isUppercase })),
-            PasswordCriteria(text: "Хотя бы одна цифра",           isMet: password.contains(where: { $0.isNumber })),
-        ]
-    }
-
-    // MARK: - Приватные методы
-    private func login(user: AppUser) {
-        currentUser = user
-        isLoggedIn = true
-        UserDefaults.standard.set(user.id, forKey: currentUserIDKey)
-        // Также сохраняем в AppStorage совместимый ключ
-        UserDefaults.standard.set(user.id, forKey: "currentUserID")
-        UserDefaults.standard.set(user.name, forKey: "userName")
-    }
-
-    private func findUser(byID id: String) -> AppUser? {
-        loadUsers().first(where: { $0.id == id })
-    }
-
-    private func loadUsers() -> [AppUser] {
-        guard let data = UserDefaults.standard.data(forKey: usersKey),
-              let users = try? JSONDecoder().decode([AppUser].self, from: data) else {
-            return []
-        }
-        return users
-    }
-
-    private func saveUsers(_ users: [AppUser]) {
-        if let data = try? JSONEncoder().encode(users) {
-            UserDefaults.standard.set(data, forKey: usersKey)
-        }
-    }
-
-    private func hash(_ password: String) -> String {
-        let data = Data(password.utf8)
-        let digest = SHA256.hash(data: data)
-        return digest.map { String(format: "%02hhx", $0) }.joined()
-    }
-
-    private func isValidEmail(_ email: String) -> Bool {
-        let regex = #"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$"#
-        return email.range(of: regex, options: .regularExpression) != nil
-    }
-
-    private func passwordStrengthError(_ password: String) -> String? {
-        if password.count < 8 { return "Пароль должен быть не менее 8 символов" }
-        if !password.contains(where: { $0.isUppercase }) { return "Добавьте хотя бы одну заглавную букву" }
-        if !password.contains(where: { $0.isNumber }) { return "Добавьте хотя бы одну цифру" }
-        return nil
-    }
+    #endif
 }
