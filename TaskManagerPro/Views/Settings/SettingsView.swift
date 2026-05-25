@@ -153,6 +153,33 @@ struct SettingsView: View {
                         .padding(18)
                         .glassCardStyle()
 
+                        // ── UIKit Demo ─────────────────────────────────────
+                        NavigationLink {
+                            UIKitTaskTableScreen(tasks: demoUIKitTasks())
+                                .ignoresSafeArea()
+                        } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "tablecells")
+                                    .font(.title2)
+                                    .foregroundStyle(Color.accentColor)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("UIKit Table Demo")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                    Text("UITableView with sections, search and delete")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(18)
+                            .glassCardStyle()
+                        }
+                        .buttonStyle(.plain)
+
                         // ── ВЫХОД ──────────────────────────────────────────
                         Button { showLogoutAlert = true } label: {
                             HStack {
@@ -215,6 +242,18 @@ struct SettingsView: View {
         userRole = ""
         hasSeenOnboarding = false
         auth.signOut()
+    }
+
+    private func demoUIKitTasks() -> [UIKitTaskRow] {
+        // In a real integration we would fetch from SwiftData by current user.
+        // For a safe demo we generate a few rows using placeholders mixed with existing priorities.
+        let sample: [UIKitTaskRow] = [
+            UIKitTaskRow(id: UUID(), title: "Buy groceries", isCompleted: false, priority: "high", dueDate: Calendar.current.date(byAdding: .hour, value: 6, to: .now)),
+            UIKitTaskRow(id: UUID(), title: "Finish project report", isCompleted: false, priority: "medium", dueDate: Calendar.current.date(byAdding: .day, value: 1, to: .now)),
+            UIKitTaskRow(id: UUID(), title: "Gym session", isCompleted: true, priority: "low", dueDate: nil),
+            UIKitTaskRow(id: UUID(), title: "Call Mom", isCompleted: true, priority: "medium", dueDate: nil)
+        ]
+        return sample
     }
 }
 
